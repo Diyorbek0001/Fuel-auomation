@@ -633,6 +633,18 @@ input:focus-visible {
   font-weight: 850;
 }
 
+.truck-inactive-label {
+  display: inline-flex;
+  margin-top: 7px;
+  border: 1px solid rgba(255, 98, 112, 0.35);
+  border-radius: 7px;
+  background: rgba(69, 10, 10, 0.32);
+  color: #fecdd3;
+  padding: 4px 7px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
 .fuel-track {
   height: 7px !important;
   background: rgba(2, 6, 13, 0.72) !important;
@@ -735,6 +747,65 @@ input:focus-visible {
   white-space: nowrap;
   font-size: 12px;
   font-weight: 850;
+}
+
+.selected-unit-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  max-width: 230px;
+}
+
+.selected-unit-control div {
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(6, 11, 19, 0.72);
+  padding: 7px 9px;
+}
+
+.selected-unit-control span {
+  display: block;
+  color: #8290a6;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.selected-unit-control strong {
+  display: block;
+  margin-top: 3px;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.selected-unit-control button {
+  height: 38px;
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 950;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.selected-unit-control button.is-active {
+  border: 1px solid rgba(255, 98, 112, 0.38);
+  background: rgba(69, 10, 10, 0.38);
+  color: #fecdd3;
+}
+
+.selected-unit-control button.is-inactive {
+  border: 1px solid rgba(45, 212, 127, 0.52);
+  background: rgba(45, 212, 127, 0.12);
+  color: #bbf7d0;
 }
 
 .station-sort-bar {

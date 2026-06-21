@@ -1,10 +1,10 @@
 import { ArrowUpDown, Fuel, Layers, MapPin, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { StationMap, type SearchPin } from "./StationMap";
 import { fetchSamsaraTest, fetchStations, fetchTrucks, syncSamsara } from "./api";
 import type { SamsaraTestResult, Station, Truck } from "./types";
 
-type TruckFilter = "any" | "assigned" | "not_assigned" | "active" | "inactive";
+type TruckFilter = "any" | "dispatched" | "not_dispatched" | "active" | "inactive";
 type MapStyle = "black" | "terrain";
 type SearchMode = "nearby" | "route";
 type StationSort = "nearest" | "cheapest";
@@ -30,6 +30,7 @@ type MapSearchResult =
     };
 
 const DISPATCH_STORAGE_KEY = "emafuel-dispatch-assignments";
+const TRUCK_ACTIVE_STORAGE_KEY = "emafuel-truck-active-overrides";
 
 export function App() {
   const [stations, setStations] = useState<Station[]>([]);
@@ -47,6 +48,7 @@ export function App() {
   const [mapSearchBusy, setMapSearchBusy] = useState(false);
   const [stationSort, setStationSort] = useState<StationSort>("nearest");
   const [dispatchAssignments, setDispatchAssignments] = useState<Record<number, number>>(() => loadDispatchAssignments());
+  const [truckActiveOverrides, setTruckActiveOverrides] = useState<Record<number, boolean>>(() => loadTruckActiveOverrides());
   const [dispatchRoutePath, setDispatchRoutePath] = useState<[number, number][]>([]);
   const [unitSearch, setUnitSearch] = useState("");
   const [fuelPercentCap, setFuelPercentCap] = useState("60");
@@ -90,10 +92,15 @@ export function App() {
     window.localStorage.setItem(DISPATCH_STORAGE_KEY, JSON.stringify(dispatchAssignments));
   }, [dispatchAssignments]);
 
+  useEffect(() => {
+    window.localStorage.setItem(TRUCK_ACTIVE_STORAGE_KEY, JSON.stringify(truckActiveOverrides));
+  }, [truckActiveOverrides]);
+
   const filteredTrucks = useMemo(() => {
     const needle = unitSearch.trim().toLowerCase();
     return trucks
-      .filter((truck) => filterTruck(truck, fuelPercentCap, truckFilter))
+      .filter((truck) => filterTruck(truck, fuelPercentCap, truckFilter, truckActiveOverrides))
+      .filter((truck) => filterDispatchStatus(truck, truckFilter, dispatchAssignments))
       .filter((truck) => {
         if (!needle) return true;
         return [truck.unit_number, truck.driver?.name].filter(Boolean).join(" ").toLowerCase().includes(needle);
@@ -102,7 +109,7 @@ export function App() {
         const diff = (a.fuel_percent ?? 999) - (b.fuel_percent ?? 999);
         return fuelSortDirection === "asc" ? diff : -diff;
       });
-  }, [trucks, fuelPercentCap, truckFilter, fuelSortDirection, unitSearch]);
+  }, [dispatchAssignments, truckActiveOverrides, trucks, fuelPercentCap, truckFilter, fuelSortDirection, unitSearch]);
 
   const visibleStations = useMemo(() => {
     if (!mapSearchResult) return stations;
@@ -415,8 +422,8 @@ export function App() {
               <span>Trucks</span>
               <select value={truckFilter} onChange={(event) => setTruckFilter(event.target.value as TruckFilter)}>
                 <option value="any">Any</option>
-                <option value="assigned">Assigned</option>
-                <option value="not_assigned">Not assigned</option>
+                <option value="dispatched">Dispatched</option>
+                <option value="not_dispatched">Not dispatched</option>
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
               </select>
@@ -459,6 +466,7 @@ export function App() {
                   key={truck.id}
                   truck={truck}
                   dispatchedStation={stations.find((station) => station.id === dispatchAssignments[truck.id]) ?? null}
+                  active={effectiveTruckActive(truck, truckActiveOverrides)}
                   selected={selectedTruck?.id === truck.id}
                   onClick={() => {
                     setSelectedTruck((current) => (current?.id === truck.id ? null : truck));
@@ -509,6 +517,7 @@ export function App() {
             stations={stationResults}
             selectedStation={recommendedStation}
             selectedTruck={selectedTruck}
+            selectedTruckActive={selectedTruck ? effectiveTruckActive(selectedTruck, truckActiveOverrides) : null}
             dispatchedStationId={selectedTruck ? dispatchAssignments[selectedTruck.id] : undefined}
             sortMode={stationSort}
             canSortNearest={Boolean(stationSortOrigin)}
@@ -527,6 +536,13 @@ export function App() {
               });
               setSelectedStation(null);
             }}
+            onToggleTruckActive={() => {
+              if (!selectedTruck) return;
+              setTruckActiveOverrides((current) => ({
+                ...current,
+                [selectedTruck.id]: !effectiveTruckActive(selectedTruck, current),
+              }));
+            }}
             onSortChange={setStationSort}
             onSelect={setSelectedStation}
           />
@@ -539,11 +555,13 @@ export function App() {
 function TruckCard({
   truck,
   dispatchedStation,
+  active,
   selected,
   onClick,
 }: {
   truck: Truck;
   dispatchedStation: Station | null;
+  active: boolean;
   selected: boolean;
   onClick: () => void;
 }) {
@@ -563,6 +581,7 @@ function TruckCard({
           <div className="mt-1 text-xs text-[#9CA3AF]">
             {truck.current_city && truck.current_state ? `${truck.current_city}, ${truck.current_state}` : "Location pending"}
           </div>
+          {!active ? <div className="truck-inactive-label">Inactive</div> : null}
         </div>
         <div className={`fuel-badge ${fuelClass} ${fuel != null && fuel < 20 ? "fuel-pulse" : ""}`}>
           {fuel == null ? "--" : `${Math.round(fuel)}%`}
@@ -583,27 +602,40 @@ function StationResults({
   stations,
   selectedStation,
   selectedTruck,
+  selectedTruckActive,
   dispatchedStationId,
   sortMode,
   canSortNearest,
   searchActive,
   onDispatch,
   onResetDispatch,
+  onToggleTruckActive,
   onSortChange,
   onSelect,
 }: {
   stations: Station[];
   selectedStation: Station | null;
   selectedTruck: Truck | null;
+  selectedTruckActive: boolean | null;
   dispatchedStationId?: number;
   sortMode: StationSort;
   canSortNearest: boolean;
   searchActive: boolean;
   onDispatch: (station: Station) => void;
   onResetDispatch: () => void;
+  onToggleTruckActive: () => void;
   onSortChange: (sort: StationSort) => void;
   onSelect: (station: Station) => void;
 }) {
+  const selectedCardRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    selectedCardRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  }, [selectedStation?.site_code]);
+
   return (
     <div className="station-results">
       <div className="station-results-summary">
@@ -611,9 +643,22 @@ function StationResults({
           <div className="station-results-kicker">{searchActive ? "Map Search" : "All Stations"}</div>
           <div className="station-results-count">{stations.length.toLocaleString()} stations</div>
         </div>
-        <div className="station-results-context">
-          {selectedTruck ? `Unit ${selectedTruck.unit_number}` : "No unit selected"}
-        </div>
+        {selectedTruck ? (
+          <div className="selected-unit-control">
+            <div>
+              <span>Unit</span>
+              <strong>{selectedTruck.unit_number}</strong>
+            </div>
+            <button
+              className={selectedTruckActive ? "is-active" : "is-inactive"}
+              onClick={onToggleTruckActive}
+            >
+              {selectedTruckActive ? "Deactivate" : "Activate"}
+            </button>
+          </div>
+        ) : (
+          <div className="station-results-context">No unit selected</div>
+        )}
       </div>
       <div className="station-sort-bar">
         <button
@@ -643,6 +688,7 @@ function StationResults({
           stations.map((station) => (
             <div
               key={station.id}
+              ref={selectedStation?.site_code === station.site_code ? selectedCardRef : null}
               className={`station-result-card ${selectedStation?.site_code === station.site_code ? "is-selected" : ""} ${
                 dispatchedStationId === station.id ? "is-dispatched" : ""
               }`}
@@ -695,15 +741,32 @@ function Metric({ label, value, tone }: { label: string; value: string; tone?: "
   );
 }
 
-function filterTruck(truck: Truck, fuelPercentCap: string, truckFilter: TruckFilter) {
+function filterTruck(
+  truck: Truck,
+  fuelPercentCap: string,
+  truckFilter: TruckFilter,
+  truckActiveOverrides: Record<number, boolean>
+) {
   const cap = Number(fuelPercentCap);
   if (Number.isFinite(cap) && cap > 0 && cap < 100) {
     if (truck.fuel_percent == null || truck.fuel_percent < 1 || truck.fuel_percent > cap) return false;
   }
-  if (truckFilter === "assigned") return Boolean(truck.driver);
-  if (truckFilter === "not_assigned") return !truck.driver;
-  if (truckFilter === "active") return truck.active;
-  if (truckFilter === "inactive") return !truck.active;
+  if (truckFilter === "active") return effectiveTruckActive(truck, truckActiveOverrides);
+  if (truckFilter === "inactive") return !effectiveTruckActive(truck, truckActiveOverrides);
+  return true;
+}
+
+function effectiveTruckActive(truck: Truck, truckActiveOverrides: Record<number, boolean>) {
+  return truckActiveOverrides[truck.id] ?? truck.active;
+}
+
+function filterDispatchStatus(
+  truck: Truck,
+  truckFilter: TruckFilter,
+  dispatchAssignments: Record<number, number>
+) {
+  if (truckFilter === "dispatched") return Boolean(dispatchAssignments[truck.id]);
+  if (truckFilter === "not_dispatched") return !dispatchAssignments[truck.id];
   return true;
 }
 
@@ -746,6 +809,21 @@ function loadDispatchAssignments(): Record<number, number> {
       Object.entries(parsed)
         .map(([truckId, stationId]) => [Number(truckId), Number(stationId)] as const)
         .filter(([truckId, stationId]) => Number.isFinite(truckId) && Number.isFinite(stationId))
+    );
+  } catch {
+    return {};
+  }
+}
+
+function loadTruckActiveOverrides(): Record<number, boolean> {
+  try {
+    const stored = window.localStorage.getItem(TRUCK_ACTIVE_STORAGE_KEY);
+    if (!stored) return {};
+    const parsed = JSON.parse(stored) as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .map(([truckId, active]) => [Number(truckId), Boolean(active)] as const)
+        .filter(([truckId]) => Number.isFinite(truckId))
     );
   } catch {
     return {};
