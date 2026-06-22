@@ -629,6 +629,7 @@ export function App() {
             selectedTruckActive={selectedTruck ? effectiveTruckActive(selectedTruck, truckActiveOverrides) : null}
             dispatchedStationId={selectedTruck ? dispatchAssignments[selectedTruck.id] : undefined}
             sortMode={stationSort}
+            distanceOrigin={stationSortOrigin}
             canSortNearest={Boolean(stationSortOrigin)}
             searchActive={Boolean(mapSearchResult)}
             onDispatch={dispatchStation}
@@ -846,6 +847,7 @@ function StationResults({
   selectedTruckActive,
   dispatchedStationId,
   sortMode,
+  distanceOrigin,
   canSortNearest,
   searchActive,
   onDispatch,
@@ -861,6 +863,7 @@ function StationResults({
   selectedTruckActive: boolean | null;
   dispatchedStationId?: number;
   sortMode: StationSort;
+  distanceOrigin: GeoPoint | null;
   canSortNearest: boolean;
   searchActive: boolean;
   onDispatch: (station: Station) => void;
@@ -928,49 +931,56 @@ function StationResults({
             </p>
           </div>
         ) : (
-          stations.map((station) => (
-            <div
-              key={station.id}
-              ref={selectedStation?.site_code === station.site_code ? selectedCardRef : null}
-              className={`station-result-card ${selectedStation?.site_code === station.site_code ? "is-selected" : ""} ${
-                dispatchedStationId === station.id ? "is-dispatched" : ""
-              }`}
-            >
-              <button className="station-result-main" onClick={() => onSelect(station)}>
-                <div className="station-result-topline">
-                  <span>Site {station.site_code}</span>
-                  <strong>${station.latest_price?.your_price ?? "--"}</strong>
-                </div>
-                <div className="station-result-name">{station.station_name}</div>
-                <div className="station-result-address">{station.address}</div>
-                <div className="station-result-address">
-                  {station.city}, {station.state}
-                </div>
-                <div className="station-result-meta">
-                  <span>{station.fuel_lane_count ?? "--"} lanes</span>
-                  <span>{station.parking_spaces_count ?? "--"} parking</span>
-                  <span>{station.shower_count ?? "--"} showers</span>
-                </div>
-              </button>
-              <div className="station-result-actions">
-                <button
-                  className="station-dispatch-button"
-                  disabled={!selectedTruck}
-                  onClick={() => onDispatch(station)}
-                >
-                  {dispatchedStationId === station.id ? "Dispatched" : "Dispatch"}
+          stations.map((station) => {
+            const isDispatched = dispatchedStationId === station.id;
+            const distanceLabel = isDispatched ? stationDistanceLabel(station, distanceOrigin) : null;
+            return (
+              <div
+                key={station.id}
+                ref={selectedStation?.site_code === station.site_code ? selectedCardRef : null}
+                className={`station-result-card ${selectedStation?.site_code === station.site_code ? "is-selected" : ""} ${
+                  isDispatched ? "is-dispatched" : ""
+                }`}
+              >
+                <button className="station-result-main" onClick={() => onSelect(station)}>
+                  <div className="station-result-topline">
+                    <span>Site {station.site_code}</span>
+                    <div className="station-result-price-block">
+                      <strong>${station.latest_price?.your_price ?? "--"}</strong>
+                      {distanceLabel ? <em>{distanceLabel}</em> : null}
+                    </div>
+                  </div>
+                  <div className="station-result-name">{station.station_name}</div>
+                  <div className="station-result-address">{station.address}</div>
+                  <div className="station-result-address">
+                    {station.city}, {station.state}
+                  </div>
+                  <div className="station-result-meta">
+                    <span>{station.fuel_lane_count ?? "--"} lanes</span>
+                    <span>{station.parking_spaces_count ?? "--"} parking</span>
+                    <span>{station.shower_count ?? "--"} showers</span>
+                  </div>
                 </button>
-                <button className="station-copy-button" onClick={() => onCopy(station)}>
-                  Copy
-                </button>
-                {dispatchedStationId === station.id ? (
-                  <button className="station-reset-button" onClick={onResetDispatch}>
-                    Reset
+                <div className="station-result-actions">
+                  <button
+                    className="station-dispatch-button"
+                    disabled={!selectedTruck}
+                    onClick={() => onDispatch(station)}
+                  >
+                    {isDispatched ? "Dispatched" : "Dispatch"}
                   </button>
-                ) : null}
+                  <button className="station-copy-button" onClick={() => onCopy(station)}>
+                    Copy
+                  </button>
+                  {isDispatched ? (
+                    <button className="station-reset-button" onClick={onResetDispatch}>
+                      Reset
+                    </button>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>
@@ -1099,6 +1109,13 @@ function stationCopyMessage(station: Station, origin: GeoPoint | null) {
     "Driver Good day sir, We hope you are doing well.",
     "Please fill up from this station.",
   ].join("\n");
+}
+
+function stationDistanceLabel(station: Station, origin: GeoPoint | null) {
+  if (!origin) return null;
+  const distance = Math.round(distanceMiles(origin, station));
+  if (!Number.isFinite(distance)) return null;
+  return `${distance} ${distance === 1 ? "mile" : "miles"} away`;
 }
 
 function stationPriceText(station: Station) {
