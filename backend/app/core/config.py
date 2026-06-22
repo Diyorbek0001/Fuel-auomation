@@ -12,7 +12,13 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     station_seed_csv: Path = Path("final_fuel_stations.csv")
     low_fuel_threshold_percent: int = 50
+    fuel_default_threshold_percent: int = 50
+    fuel_refuel_jump_percent: int = 10
     missed_station_threshold_miles: float = 10.0
+    dispatch_pre_alert_miles: float = 60.0
+    dispatch_final_alert_miles: float = 50.0
+    dispatch_arrival_radius_miles: float = 0.5
+    dispatch_missed_distance_miles: float = 5.0
     samsara_api_token: str = ""
     samsara_api_token_1: str = ""
     samsara_api_token_2: str = ""
@@ -22,8 +28,10 @@ class Settings(BaseSettings):
     samsara_account_name_1: str = "Samsara 1"
     samsara_account_name_2: str = "Samsara 2"
     samsara_account_name_3: str = "Samsara 3"
+    samsara_poll_interval_seconds: int = 20
     samsara_sync_interval_seconds: int = 180
     telegram_bot_token: str = ""
+    telegram_dispatch_chat_id: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

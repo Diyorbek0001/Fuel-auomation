@@ -6,6 +6,7 @@ import type {
   SamsaraTestResult,
   Station,
   Truck,
+  TruckStreamEvent,
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
@@ -34,6 +35,24 @@ export async function syncSamsara(): Promise<SamsaraSyncResult> {
   const response = await fetch(`${API_BASE}/samsara/sync`, { method: "POST" });
   if (!response.ok) throw new Error("Failed to sync Samsara");
   return response.json();
+}
+
+export async function assignDispatch(truckId: number, stationId: number): Promise<void> {
+  const response = await fetch(`${API_BASE}/dispatches/assign`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ truck_id: truckId, station_id: stationId }),
+  });
+  if (!response.ok) throw new Error("Failed to assign dispatch");
+}
+
+export async function cancelDispatch(truckId: number): Promise<void> {
+  const response = await fetch(`${API_BASE}/dispatches/cancel`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ truck_id: truckId }),
+  });
+  if (!response.ok) throw new Error("Failed to cancel dispatch");
 }
 
 export async function fetchNotifications(status?: NotificationStatus): Promise<NotificationListResult> {
@@ -78,5 +97,11 @@ export function subscribeToNotifications(onEvent: (event: NotificationStreamEven
   const source = new EventSource(`${API_BASE}/notifications/stream`);
   source.addEventListener("notification", (event) => onEvent(JSON.parse(event.data)));
   source.addEventListener("unread_count", (event) => onEvent(JSON.parse(event.data)));
+  return source;
+}
+
+export function subscribeToTruckUpdates(onEvent: (event: TruckStreamEvent) => void): EventSource {
+  const source = new EventSource(`${API_BASE}/trucks/stream`);
+  source.addEventListener("truck_update", (event) => onEvent(JSON.parse(event.data)));
   return source;
 }

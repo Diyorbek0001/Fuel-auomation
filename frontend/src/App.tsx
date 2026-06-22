@@ -2,6 +2,8 @@ import { Archive, ArrowUpDown, Bell, CheckCheck, Fuel, Layers, MapPin, Search } 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StationMap, type SearchPin } from "./StationMap";
 import {
+  assignDispatch,
+  cancelDispatch,
   archiveNotifications,
   fetchNotifications,
   fetchSamsaraTest,
@@ -10,7 +12,7 @@ import {
   fetchUnreadNotificationCount,
   markNotificationsRead,
   subscribeToNotifications,
-  syncSamsara,
+  subscribeToTruckUpdates,
 } from "./api";
 import type { NotificationEvent, NotificationStatus, SamsaraTestResult, Station, Truck } from "./types";
 
@@ -80,29 +82,28 @@ export function App() {
 
   useEffect(() => {
     Promise.all([fetchStations(), fetchTrucks(), fetchSamsaraTest()])
-      .then(async ([stationItems, truckItems, samsara]) => {
-        let latestTrucks = truckItems;
-        let latestSamsara = samsara;
-        if (samsara.api_token_configured) {
-          try {
-            await syncSamsara();
-            latestTrucks = await fetchTrucks();
-            latestSamsara = await fetchSamsaraTest();
-          } catch (error) {
-            latestSamsara = {
-              ...samsara,
-              connection_status: "failed",
-              latest_error: error instanceof Error ? error.message : "Samsara sync failed",
-            };
-          }
-        }
+      .then(([stationItems, truckItems, samsara]) => {
         setStations(stationItems);
-        setTrucks(latestTrucks);
-        setSamsaraStatus(latestSamsara);
-        setSelectedTruck(latestTrucks[0] ?? null);
+        setTrucks(truckItems);
+        setSamsaraStatus(samsara);
+        setSelectedTruck(truckItems[0] ?? null);
       })
       .catch((error) => setLoadError(error instanceof Error ? error.message : "Unable to load dashboard data"))
       .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    const source = subscribeToTruckUpdates((event) => {
+      setTrucks((current) => {
+        const exists = current.some((truck) => truck.id === event.truck.id);
+        const next = exists
+          ? current.map((truck) => (truck.id === event.truck.id ? event.truck : truck))
+          : [...current, event.truck];
+        return next.filter((truck) => truck.active);
+      });
+      setSelectedTruck((current) => (current?.id === event.truck.id ? event.truck : current));
+    });
+    return () => source.close();
   }, []);
 
   useEffect(() => {
@@ -302,6 +303,9 @@ export function App() {
     if (!selectedTruck) return;
     setDispatchAssignments((current) => ({ ...current, [selectedTruck.id]: station.id }));
     setSelectedStation(station);
+    void assignDispatch(selectedTruck.id, station.id).catch((error) => {
+      setLoadError(error instanceof Error ? error.message : "Failed to assign dispatch");
+    });
   }
 
   function copyStation(station: Station) {
@@ -631,12 +635,16 @@ export function App() {
             onCopy={copyStation}
             onResetDispatch={() => {
               if (!selectedTruck) return;
+              const truckId = selectedTruck.id;
               setDispatchAssignments((current) => {
                 const next = { ...current };
-                delete next[selectedTruck.id];
+                delete next[truckId];
                 return next;
               });
               setSelectedStation(null);
+              void cancelDispatch(truckId).catch((error) => {
+                setLoadError(error instanceof Error ? error.message : "Failed to cancel dispatch");
+              });
             }}
             onToggleTruckActive={() => {
               if (!selectedTruck) return;
@@ -767,7 +775,7 @@ function NotificationModal({
                   </div>
                   <p>{notification.message}</p>
                   <div className="notification-row-meta">
-                    <span>Unit {notification.unit_number ?? notification.truck_id}</span>
+                    <span>{notification.unit_number ? `Unit ${notification.unit_number}` : "System"}</span>
                     <span>{eventTypeLabel(notification.event_type)}</span>
                     <span className={`notification-status-pill is-${notification.status}`}>{notification.status}</span>
                   </div>
@@ -796,6 +804,7 @@ function TruckCard({
 }) {
   const fuel = truck.fuel_percent;
   const fuelClass = fuelColor(fuel);
+  const freshness = truckFreshness(truck);
   return (
     <button
       onClick={onClick}
@@ -819,7 +828,10 @@ function TruckCard({
       <div className="fuel-track mt-3 h-2 overflow-hidden rounded-full bg-[#0B1220]">
         <div className={`h-full ${fuelBarColor(fuel)}`} style={{ width: `${Math.max(3, Math.min(100, fuel ?? 0))}%` }} />
       </div>
-      <div className="mt-2 text-xs font-semibold text-[#9CA3AF]">{truckStatus(truck)}</div>
+      <div className="truck-card-footer">
+        <span>{truckStatus(truck)}</span>
+        <span className={`truck-freshness is-${freshness.status}`}>{freshness.label}</span>
+      </div>
       {dispatchedStation ? (
         <div className="truck-dispatch-destination">Dispatch: {dispatchedStation.station_name} · {dispatchedStation.site_code}</div>
       ) : null}
@@ -1047,6 +1059,15 @@ function truckStatus(truck: Truck) {
   if ((truck.fuel_percent ?? 101) < 40) return "Low Fuel";
   if ((truck.fuel_percent ?? 101) < 60) return "Watch";
   return "No Assignment";
+}
+
+function truckFreshness(truck: Truck) {
+  const timestamp = truck.last_samsara_update_at ?? truck.last_samsara_sync_at;
+  if (!timestamp) return { status: "offline", label: "Offline" };
+  const ageMinutes = (Date.now() - new Date(timestamp).getTime()) / 60000;
+  if (!Number.isFinite(ageMinutes) || ageMinutes >= 5) return { status: "offline", label: "Offline" };
+  if (ageMinutes >= 2) return { status: "stale", label: "Stale" };
+  return { status: "live", label: "Live" };
 }
 
 function nearestStation(truck: Truck, stations: Station[]) {

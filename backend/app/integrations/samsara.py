@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -17,6 +18,9 @@ class SamsaraVehicleSnapshot:
     latitude: float | None
     longitude: float | None
     odometer_miles: float | None
+    speed_mph: float | None
+    heading_degrees: float | None
+    update_at: datetime | None
     driver_name: str | None
 
 
@@ -108,6 +112,9 @@ def _vehicle_snapshot(item: dict[str, Any]) -> SamsaraVehicleSnapshot:
         latitude=_float_or_none((gps or {}).get("latitude")),
         longitude=_float_or_none((gps or {}).get("longitude")),
         odometer_miles=_meters_to_miles(_float_or_none((odometer or {}).get("value"))),
+        speed_mph=_float_or_none((gps or {}).get("speedMilesPerHour") or (gps or {}).get("speedMph")),
+        heading_degrees=_float_or_none((gps or {}).get("headingDegrees") or (gps or {}).get("heading")),
+        update_at=_datetime_or_none((gps or {}).get("time") or (gps or {}).get("updatedAtTime")),
         driver_name=_driver_name(item),
     )
 
@@ -138,6 +145,18 @@ def _float_or_none(value: Any) -> float | None:
     if value is None or value == "":
         return None
     return float(value)
+
+
+def _datetime_or_none(value: Any) -> datetime | None:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    text = str(value)
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def _meters_to_miles(value: float | None) -> float | None:

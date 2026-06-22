@@ -90,11 +90,19 @@ async def create_notification_event(
     title: str,
     message: str,
     dispatch_id: int | None = None,
+    channel: str = "frontend",
+    sent_to: str | None = None,
+    dedupe_key: str | None = None,
     payload_json: dict[str, Any] | None = None,
     sent_at=None,
 ) -> NotificationEvent | None:
     if not truck.active:
         return None
+
+    if dedupe_key:
+        existing = await session.scalar(select(NotificationEvent).where(NotificationEvent.dedupe_key == dedupe_key))
+        if existing is not None:
+            return None
 
     notification = NotificationEvent(
         truck=truck,
@@ -102,6 +110,48 @@ async def create_notification_event(
         event_type=event_type,
         title=title,
         message=message,
+        channel=channel,
+        sent_to=sent_to,
+        dedupe_key=dedupe_key,
+        status=NotificationStatus.unread,
+        sent_at=sent_at,
+        payload_json=payload_json or {},
+    )
+    session.add(notification)
+    await session.commit()
+    notification_broadcaster.publish_notification(
+        NotificationEventOut.model_validate(notification),
+        await unread_count(session),
+    )
+    return notification
+
+
+async def create_system_notification_event(
+    session: AsyncSession,
+    *,
+    event_type: str,
+    title: str,
+    message: str,
+    channel: str = "frontend",
+    sent_to: str | None = None,
+    dedupe_key: str | None = None,
+    payload_json: dict[str, Any] | None = None,
+    sent_at=None,
+) -> NotificationEvent | None:
+    if dedupe_key:
+        existing = await session.scalar(select(NotificationEvent).where(NotificationEvent.dedupe_key == dedupe_key))
+        if existing is not None:
+            return None
+
+    notification = NotificationEvent(
+        truck_id=None,
+        dispatch_id=None,
+        event_type=event_type,
+        title=title,
+        message=message,
+        channel=channel,
+        sent_to=sent_to,
+        dedupe_key=dedupe_key,
         status=NotificationStatus.unread,
         sent_at=sent_at,
         payload_json=payload_json or {},

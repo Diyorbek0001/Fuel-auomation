@@ -21,11 +21,14 @@ class NotificationEvent(Base):
     __tablename__ = "notification_events"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    truck_id: Mapped[int] = mapped_column(ForeignKey("trucks.id"), index=True)
+    truck_id: Mapped[Optional[int]] = mapped_column(ForeignKey("trucks.id"), nullable=True, index=True)
     dispatch_id: Mapped[Optional[int]] = mapped_column(ForeignKey("fuel_dispatches.id"), nullable=True, index=True)
     event_type: Mapped[str] = mapped_column(String(96), index=True)
     title: Mapped[str] = mapped_column(String(255))
     message: Mapped[str] = mapped_column(Text)
+    channel: Mapped[str] = mapped_column(String(64), default="frontend", index=True)
+    sent_to: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    dedupe_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, unique=True)
     status: Mapped[NotificationStatus] = mapped_column(
         Enum(NotificationStatus),
         default=NotificationStatus.unread,

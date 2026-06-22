@@ -8,11 +8,14 @@ from app.models.notification_event import NotificationStatus
 
 class NotificationEventOut(BaseModel):
     id: int
-    truck_id: int
+    truck_id: Optional[int]
     dispatch_id: Optional[int]
     event_type: str
     title: str
     message: str
+    channel: str
+    sent_to: Optional[str]
+    dedupe_key: Optional[str]
     status: NotificationStatus
     read_at: Optional[datetime]
     archived_at: Optional[datetime]

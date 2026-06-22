@@ -36,13 +36,20 @@ export type Truck = {
   id: number;
   unit_number: string;
   fuel_percent: number | null;
+  previous_fuel_percent: number | null;
   latitude: number | null;
   longitude: number | null;
+  previous_latitude: number | null;
+  previous_longitude: number | null;
   odometer_miles: number | null;
+  speed_mph: number | null;
+  heading_degrees: number | null;
   current_city: string | null;
   current_state: string | null;
   destination: string | null;
   active: boolean;
+  last_samsara_update_at: string | null;
+  last_samsara_sync_at: string | null;
   samsara_account_name: string | null;
   driver: DriverSummary | null;
 };
@@ -65,11 +72,14 @@ export type NotificationStatus = "unread" | "read" | "archived";
 
 export type NotificationEvent = {
   id: number;
-  truck_id: number;
+  truck_id: number | null;
   dispatch_id: number | null;
   event_type: string;
   title: string;
   message: string;
+  channel: string;
+  sent_to: string | null;
+  dedupe_key: string | null;
   status: NotificationStatus;
   read_at: string | null;
   archived_at: string | null;
@@ -94,3 +104,8 @@ export type NotificationStreamEvent =
       type: "unread_count";
       unread_count: number;
     };
+
+export type TruckStreamEvent = {
+  type: "truck_update";
+  truck: Truck;
+};
